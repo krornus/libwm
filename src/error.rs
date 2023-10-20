@@ -10,4 +10,6 @@ pub enum Error {
     XCBError(#[from] xcb::Error),
     #[error("xcb protocol error")]
     ProtocolError(#[from] xcb::ProtocolError),
+    #[error("io error")]
+    IoError(#[from] std::io::Error),
 }

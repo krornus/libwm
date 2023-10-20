@@ -8,6 +8,8 @@ xcb = { version = "1.2.2", features = ["randr"] }
 bitflags = "2.4.1"
 thiserror = "1.0.50"
 slab = "0.4.9"
+libc = "0.2.149"
+fork = "0.1"
 
 [[bin]]
 name = "ndwm"
