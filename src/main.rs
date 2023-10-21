@@ -1,10 +1,11 @@
-use wm::manager::{Manager, Event};
-use wm::keyboard::{Key, Keyboard, KeyModifier, KeyPress};
 use wm::keysym;
+use wm::error::Error;
+use wm::manager::{Manager, Event};
+use wm::keyboard::{Key, KeyModifier, KeyPress};
 
 use wm::process;
 
-fn handle_key(mgr: &mut Manager, key: Key) {
+fn handle_key(key: Key) {
     match key {
         Key { keysym: keysym::i, .. } => process::execvp(&["firefox"]),
         Key { keysym: keysym::Return, .. } => process::execvp(&["st"]),
@@ -15,10 +16,24 @@ fn handle_key(mgr: &mut Manager, key: Key) {
     }
 }
 
-fn handle(mgr: &mut Manager, e: Event) {
+fn handle(mgr: &mut Manager, e: Event) -> Result<(), Error> {
     match dbg!(e) {
-        Event::Binding { key } => handle_key(mgr, key),
+        Event::Binding { key } => handle_key(key),
+        Event::WindowCreate { window: id } => mgr.windows[id].show()?,
+        Event::WindowShow { window: id } => mgr.windows[id].show()?,
         _ => {},
+    }
+
+    Ok(())
+}
+
+fn run(mut mgr: Manager) {
+    loop {
+        match mgr.next() {
+            Ok(Some(x)) => handle(&mut mgr, x).expect("failed to handle event"),
+            Err(e) => eprintln!("error: {}", e),
+            _ => {},
+        }
     }
 }
 
@@ -44,11 +59,5 @@ fn main() {
         press: KeyPress::Press,
     }).expect("bind key failed");
 
-    loop {
-        match mgr.next() {
-            Ok(Some(x)) => handle(&mut mgr, x),
-            Err(e) => eprintln!("error: {}", e),
-            _ => {},
-        }
-    }
+    run(mgr)
 }

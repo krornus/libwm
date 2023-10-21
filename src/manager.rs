@@ -6,6 +6,7 @@ use xcb::x;
 use crate::error::Error;
 use crate::monitor::{Monitors, MonitorId};
 use crate::keyboard::{Keyboard, Key};
+use crate::window::{Windows, WindowId};
 
 /// Required xcb extensions
 static REQUIRED: &'static [xcb::Extension] = &[xcb::Extension::RandR];
@@ -15,21 +16,27 @@ static OPTIONAL: &'static [xcb::Extension] = &[];
 
 #[derive(Debug)]
 pub enum Event {
-    ManagerBegin,
-    ManagerEnd,
     MonitorConnect { monitor: MonitorId, x: i16, y: i16, width: u16, height: u16 },
     MonitorDisconnect { monitor: MonitorId },
     MonitorPrimary { monitor: MonitorId },
     MonitorTransform { monitor: MonitorId, x: i16, y: i16, width: u16, height: u16 },
+    WindowCreate { window: WindowId, x: i16, y: i16, width: u16, height: u16 },
+    WindowResize { window: WindowId, x: i16, y: i16, width: u16, height: u16 },
+    WindowShow { window: WindowId },
     Binding { key: Key },
 }
 
+/// This atrocity is to force Rust to allow us to pass around a cloned
+/// xcb::Connection handle without encountering borrow checker type issues. xcb
+/// *should* be fully thread safe so its. The only issue is dropping, we can't
+/// ever drop a Handle because its just a copy of the main pointer, held by the
+/// Manager struct.
 struct Handle {
     xcb: mem::ManuallyDrop<xcb::Connection>
 }
 
 impl Handle {
-    fn clone(xcb: &xcb::Connection) -> Self {
+    fn new(xcb: &xcb::Connection) -> Self {
         let raw = xcb.get_raw_conn();
         let copy = unsafe {
             xcb::Connection::from_raw_conn_and_extensions(
@@ -39,6 +46,12 @@ impl Handle {
         Handle {
             xcb: mem::ManuallyDrop::new(copy)
         }
+    }
+}
+
+impl Clone for Handle {
+    fn clone(&self) -> Self {
+        Handle::new(&self.xcb)
     }
 }
 
@@ -52,7 +65,12 @@ pub struct Connection {
 
 impl Clone for Connection {
     fn clone(&self) -> Self {
-        Connection::new(&self.handle.xcb, self.screen, &self.events)
+        Self {
+            screen: self.screen,
+            root: self.root,
+            handle: self.handle.clone(),
+            events: self.events.clone(),
+        }
     }
 }
 
@@ -64,7 +82,7 @@ impl Connection {
         Self {
             screen: screen,
             root: root,
-            handle: Handle::clone(xcb),
+            handle: Handle::new(xcb),
             events: sender.clone(),
         }
     }
@@ -122,10 +140,11 @@ impl Connection {
 
 pub struct Manager {
     #[allow(dead_code)]
-    __raw: xcb::Connection, // lifetime only, use conn instead. See Handle comments
+    raw: xcb::Connection, // lifetime only, use conn instead. See Handle comments
     conn: Connection,
     events: mpsc::Receiver<Event>,
-    monitors: Monitors,
+    pub monitors: Monitors,
+    pub windows: Windows,
     pub keyboard: Keyboard,
 }
 
@@ -141,8 +160,18 @@ impl Manager {
             xcb::Event::X(xcb::x::Event::KeyRelease(ref e)) => {
                 self.keyboard.press(e.root(), e.state(), e.detail() as x::Keycode, false);
             }
+            xcb::Event::X(xcb::x::Event::CreateNotify(ref e)) => {
+                self.windows.create(e);
+            }
+            xcb::Event::X(xcb::x::Event::ConfigureRequest(ref e)) => {
+                self.windows.configure(e);
+            }
+            xcb::Event::X(xcb::x::Event::MapRequest(ref e)) => {
+                self.windows.map(e);
+
+            }
             _ => {
-            },
+            }
         }
 
         Ok(())
@@ -176,13 +205,15 @@ impl Manager {
         }).map_err(|_| Error::AlreadyRunning)?;
 
         let monitors = Monitors::new(conn.clone())?;
+        let windows = Windows::new(conn.clone());
         let keyboard = Keyboard::new(conn.clone())?;
 
         let mgr = Manager {
-            __raw: raw,
+            raw: raw,
             conn: conn,
             events: rx,
             monitors: monitors,
+            windows: windows,
             keyboard: keyboard,
         };
 

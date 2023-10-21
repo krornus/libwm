@@ -15,9 +15,9 @@ pub struct MonitorId {
 }
 
 pub struct Monitor {
-    root: x::Window,
-    name: String,
-    size: Rect,
+    pub root: x::Window,
+    pub name: String,
+    pub size: Rect,
 }
 
 pub struct Monitors {
