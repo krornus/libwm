@@ -6,7 +6,7 @@ use xcb::x;
 use crate::error::Error;
 use crate::monitor::{Monitors, MonitorId};
 use crate::keyboard::{Keyboard, Key};
-use crate::window::{Windows, WindowId};
+use crate::container::{Container, ContainerId};
 
 /// Required xcb extensions
 static REQUIRED: &'static [xcb::Extension] = &[xcb::Extension::RandR];
@@ -20,9 +20,9 @@ pub enum Event {
     MonitorDisconnect { monitor: MonitorId },
     MonitorPrimary { monitor: MonitorId },
     MonitorTransform { monitor: MonitorId, x: i16, y: i16, width: u16, height: u16 },
-    WindowCreate { window: WindowId, x: i16, y: i16, width: u16, height: u16 },
-    WindowResize { window: WindowId, x: i16, y: i16, width: u16, height: u16 },
-    WindowShow { window: WindowId },
+    WindowCreate { window: ContainerId, x: i16, y: i16, width: u16, height: u16 },
+    WindowResize { window: ContainerId, x: i16, y: i16, width: u16, height: u16 },
+    WindowShow { window: ContainerId },
     Binding { key: Key },
 }
 
@@ -59,7 +59,7 @@ impl Clone for Handle {
 pub struct Connection {
     handle: Handle,
     screen: usize,
-    pub root: x::Window,
+    root: x::Window,
     events: mpsc::Sender<Event>,
 }
 
@@ -85,6 +85,16 @@ impl Connection {
             handle: Handle::new(xcb),
             events: sender.clone(),
         }
+    }
+
+    #[inline]
+    pub fn root(&self) -> x::Window {
+        self.root
+    }
+
+    #[inline]
+    pub fn screen(&self) -> usize {
+        self.screen
     }
 
     pub fn raw<'a>(&'a self) -> &'a xcb::Connection {
@@ -144,8 +154,8 @@ pub struct Manager {
     conn: Connection,
     events: mpsc::Receiver<Event>,
     pub monitors: Monitors,
-    pub windows: Windows,
     pub keyboard: Keyboard,
+    pub root: Container,
 }
 
 impl Manager {
@@ -161,13 +171,13 @@ impl Manager {
                 self.keyboard.press(e.root(), e.state(), e.detail() as x::Keycode, false);
             }
             xcb::Event::X(xcb::x::Event::CreateNotify(ref e)) => {
-                self.windows.create(e);
+                self.root.create(e);
             }
             xcb::Event::X(xcb::x::Event::ConfigureRequest(ref e)) => {
-                self.windows.configure(e);
+                self.root.configure(e);
             }
             xcb::Event::X(xcb::x::Event::MapRequest(ref e)) => {
-                self.windows.map(e);
+                self.root.map(e);
 
             }
             _ => {
@@ -205,16 +215,16 @@ impl Manager {
         }).map_err(|_| Error::AlreadyRunning)?;
 
         let monitors = Monitors::new(conn.clone())?;
-        let windows = Windows::new(conn.clone());
         let keyboard = Keyboard::new(conn.clone())?;
+        let container = Container::new(conn.clone())?;
 
         let mgr = Manager {
             raw: raw,
             conn: conn,
             events: rx,
             monitors: monitors,
-            windows: windows,
             keyboard: keyboard,
+            root: container,
         };
 
         Ok(mgr)

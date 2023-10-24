@@ -1,8 +1,11 @@
 pub mod rect;
+pub mod tree;
 pub mod error;
 pub mod process;
 pub mod manager;
 pub mod monitor;
+pub mod container;
 pub mod window;
+pub mod layout;
 pub mod keysym;
 pub mod keyboard;

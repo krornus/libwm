@@ -27,7 +27,7 @@ pub struct Monitors {
 
 impl Monitors {
     pub fn new(conn: Connection) -> Result<Self, Error> {
-        let root = conn.root;
+        let root = conn.root();
 
         conn.send_and_check_request(&randr::SelectInput {
             window: root,
@@ -49,7 +49,7 @@ impl Monitors {
 
     /// Refresh monitor state for all roots
     pub fn update(&mut self) -> Result<(), Error> {
-        self.update_root(self.conn.root)
+        self.update_root(self.conn.root())
     }
 }
 
@@ -188,5 +188,19 @@ impl Monitors {
         }
 
         Ok(())
+    }
+}
+
+impl std::ops::Index<MonitorId> for Monitors {
+    type Output = Monitor;
+
+    fn index(&self, id: MonitorId) -> &Self::Output {
+        &self.monitors[id.id]
+    }
+}
+
+impl std::ops::IndexMut<MonitorId> for Monitors {
+    fn index_mut(&mut self, id: MonitorId) -> &mut Self::Output {
+        &mut self.monitors[id.id]
     }
 }

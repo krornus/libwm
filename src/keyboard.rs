@@ -170,7 +170,7 @@ impl Keyboard {
 
         self.conn.send_request_checked(&x::GrabKey {
             owner_events: true,
-            grab_window: self.conn.root,
+            grab_window: self.conn.root(),
             modifiers: m,
             key: keycode as u8,
             pointer_mode: x::GrabMode::Async,
@@ -185,18 +185,18 @@ impl Keyboard {
 
             match bind.press {
                 KeyPress::Press => {
-                    self.map.entry((self.conn.root, bind.mask, kc, true))
+                    self.map.entry((self.conn.root(), bind.mask, kc, true))
                         .or_insert(bind.clone());
                 }
                 KeyPress::Release => {
-                    self.map.entry((self.conn.root, bind.mask, kc, false))
+                    self.map.entry((self.conn.root(), bind.mask, kc, false))
                         .or_insert(bind.clone());
                 }
                 KeyPress::Both => {
-                    self.map.entry((self.conn.root, bind.mask, kc, true))
+                    self.map.entry((self.conn.root(), bind.mask, kc, true))
                         .or_insert(bind.clone());
 
-                    self.map.entry((self.conn.root, bind.mask, kc, false))
+                    self.map.entry((self.conn.root(), bind.mask, kc, false))
                         .or_insert(bind.clone());
                 }
             }

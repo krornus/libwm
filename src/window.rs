@@ -1,44 +1,74 @@
 use xcb::x;
 
-use slab::Slab;
-
 use crate::rect::Rect;
 use crate::error::Error;
-use crate::manager::{Connection, Event};
-
-#[repr(transparent)]
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct WindowId {
-    id: usize,
-}
+use crate::manager::Connection;
 
 pub struct Window {
     conn: Connection,
     window: x::Window,
-    size: Option<Rect>,
+    size: Rect,
+    visible: bool,
+    managed: bool,
+    selectable: bool,
 }
 
 impl Window {
-    pub fn new(conn: Connection, window: x::Window) -> Self {
+    pub fn size(&self) -> Rect {
+        self.size
+    }
+
+    pub fn window(&self) -> x::Window {
+        self.window
+    }
+
+    pub fn managed(&self) -> bool {
+        self.managed
+    }
+}
+
+impl Window {
+    pub fn new(conn: Connection, window: x::Window, size: Rect, managed: bool, selectable: bool) -> Self {
         Self {
             conn: conn,
             window: window,
-            size: None,
+            size: size,
+            managed: managed,
+            visible: false,
+            selectable: selectable,
         }
     }
 
-    pub fn show(&self) -> Result<(), Error> {
-        let cookie = self.conn.send_request_checked(&x::MapWindow {
-            window: self.window,
-        });
+    pub fn show(&mut self) -> Result<(), Error> {
+        if !self.visible {
+            let cookie = self.conn.send_request_checked(&x::MapWindow {
+                window: self.window,
+            });
 
-        self.conn.check_request(cookie)?;
+            self.conn.check_request(cookie)?;
+        }
+
+        self.visible = true;
+
+        Ok(())
+    }
+
+    pub fn hide(&mut self) -> Result<(), Error> {
+        if !self.visible {
+            let cookie = self.conn.send_request_checked(&x::UnmapWindow {
+                window: self.window,
+            });
+
+            self.conn.check_request(cookie)?;
+        }
+
+        self.visible = false;
 
         Ok(())
     }
 
     pub fn resize(&mut self, size: Rect) -> Result<(), Error> {
-        if self.size != Some(size) {
+        if self.size != size {
 
             let cookie = self.conn.send_request_checked(&x::ConfigureWindow {
                 window: self.window,
@@ -52,90 +82,21 @@ impl Window {
 
             self.conn.check_request(cookie)?;
 
-            self.size = Some(size);
+            self.size = size;
         }
 
         Ok(())
     }
-}
 
-pub struct Windows {
-    conn: Connection,
-    windows: Slab<Window>,
-}
-
-impl Windows {
-    pub fn new(conn: Connection) -> Self {
-        Windows {
-            conn: conn,
-            windows: Slab::new(),
-        }
-    }
-
-    pub fn add(&mut self, window: Window) -> WindowId {
-        WindowId {
-            id: self.windows.insert(window)
-        }
-    }
-
-    pub fn get(&self, window: x::Window) -> Option<(WindowId, &Window)> {
-        for (id, win) in self.windows.iter() {
-            if win.window == window {
-                return Some((WindowId { id }, win))
-            }
-        }
-
-        None
-    }
-
-    pub fn create(&mut self, event: &x::CreateNotifyEvent) {
-        let win = Window::new(self.conn.clone(), event.window());
-        let id = self.add(win);
-
-        self.conn.produce(Event::WindowCreate {
-            window: id,
-            x: event.x(),
-            y: event.y(),
-            width: event.width(),
-            height: event.height(),
+    pub fn focus(&self) -> Result<(), Error> {
+        let cookie = self.conn.send_request_checked(&x::SetInputFocus {
+            revert_to: x::InputFocus::PointerRoot,
+            focus: self.window,
+            time: x::CURRENT_TIME,
         });
-    }
 
-    pub fn configure(&mut self, event: &x::ConfigureRequestEvent) {
-        match self.get(event.window()) {
-            Some((id, _)) => {
-                self.conn.produce(Event::WindowResize {
-                    window: id,
-                    x: event.x(),
-                    y: event.y(),
-                    width: event.width(),
-                    height: event.height(),
-                });
-            },
-            None => {
-                eprintln!("Unknown window configured!");
-            }
-        }
-    }
+        self.conn.check_request(cookie)?;
 
-    pub fn map(&mut self, event: &x::MapRequestEvent) {
-        match self.get(event.window()) {
-            Some((id, _)) => {
-                self.conn.produce(Event::WindowShow {
-                    window: id
-                });
-            },
-            None => {
-                eprintln!("Unknown window mapped!");
-            }
-        }
-    }
-}
-
-impl std::ops::Index<WindowId> for Windows {
-    type Output = Window;
-
-    fn index(&self, id: WindowId) -> &Self::Output {
-        &self.windows[id.id]
+        Ok(())
     }
 }
